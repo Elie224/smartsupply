@@ -398,6 +398,8 @@ Toutes les données sont **synthétiques** : aucune entreprise ni personne réel
 """)
     if repo:
         st.markdown(f"Code source : [github.com/{repo}](https://github.com/{repo})")
+    st.markdown("API de prévision en ligne (même modèle, documentation interactive) : "
+                "[smartsupply-delta.vercel.app/docs](https://smartsupply-delta.vercel.app/docs)")
     versions = etat.get("versions") or {}
     if versions:
         st.caption("Modèle produit avec : " + ", ".join(f"{k} {v}" for k, v in versions.items()))

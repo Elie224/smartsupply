@@ -4,7 +4,10 @@
 
 [![CI](https://github.com/Elie224/smartsupply/actions/workflows/ci.yml/badge.svg)](https://github.com/Elie224/smartsupply/actions/workflows/ci.yml)
 
-🌐 **Site public (mis à jour chaque nuit) : https://smartsupply-bmltwzqdengm24263gay2v.streamlit.app**
+🌐 **En ligne, mis à jour chaque nuit :**
+- **Site** (résultats, prévisions, simulation) : https://smartsupply-bmltwzqdengm24263gay2v.streamlit.app
+- **API de prévision** (documentation interactive) : https://smartsupply-delta.vercel.app/docs
+- **Suivi des entraînements MLflow** (DagsHub) : https://dagshub.com/Elie224/smartsupply/experiments
 
 > **Données 100 % synthétiques.** Faker fabrique les identités (clients, produits, fournisseurs) ; un simulateur métier fabrique l'activité (commandes, stocks, achats, promotions, arrivées et départs de clients). Les résultats sont valables **dans ce monde simulé** et ne constituent pas une validation sur une entreprise réelle.
 
