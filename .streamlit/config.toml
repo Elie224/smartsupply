@@ -1,0 +1,7 @@
+# Apparence du site Streamlit (lu en local et sur Streamlit Community Cloud).
+[theme]
+primaryColor = "#1f6feb"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
