@@ -1,0 +1,226 @@
+services:
+  postgres:
+    image: postgres:16            # version fixée = reproductible
+    container_name: smartsupply_postgres
+    env_file: .env                # lit utilisateur / mot de passe / base
+    # Mémoire partagée : 64 Mo par défaut dans Docker, trop peu quand Power BI
+    # lance plusieurs requêtes parallèles (erreur "could not resize shared memory segment").
+    shm_size: 512mb
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"   # accessible seulement depuis ton PC
+    volumes:
+      - pgdata:/var/lib/postgresql/data     # les données survivent à un redémarrage
+      - ./database:/database:ro             # scripts SQL visibles dans le conteneur (lecture seule)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  prefect:
+    # Serveur Prefect (planification + interface web). Version 3 fixée.
+    image: prefecthq/prefect:3-python3.12
+    container_name: smartsupply_prefect
+    command: prefect server start --host 0.0.0.0 --port 4200
+    environment:
+      # Adresse que l'interface web utilise depuis ton navigateur
+      PREFECT_UI_API_URL: http://127.0.0.1:${PREFECT_PORT:-14200}/api
+      # Expose /api/metrics pour Prometheus
+      PREFECT_API_ENABLE_METRICS: "true"
+    ports:
+      - "127.0.0.1:${PREFECT_PORT:-14200}:4200"   # 4200 est déjà pris par un autre projet
+    volumes:
+      - prefectdata:/root/.prefect                 # historique des runs conservé
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4200/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  mlflow:
+    # Suivi des entraînements + registre des modèles : http://127.0.0.1:15000
+    # Runs et registre dans la base PostgreSQL « mlflow » (créée au 1er démarrage),
+    # fichiers (modèles...) dans le volume mlflowartifacts.
+    build: ./docker/mlflow
+    image: smartsupply-mlflow:3.18.0
+    container_name: smartsupply_mlflow
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      MLFLOW_PORT: ${MLFLOW_PORT:-15000}
+    ports:
+      - "127.0.0.1:${MLFLOW_PORT:-15000}:5000"
+    volumes:
+      - mlflowartifacts:/mlartifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  pipeline:
+    # Cycle nocturne (2 h 30, heure de Paris) : simulation, features, réentraînement,
+    # prévision, copie dans MLflow. Pas de dépendance à MLflow : s'il est arrêté,
+    # le cycle tourne quand même et la copie est rattrapée au passage suivant.
+    build: .
+    image: smartsupply-app:latest
+    container_name: smartsupply_pipeline
+    env_file: .env
+    environment:
+      # Dans le réseau Docker, on joint les services par leur NOM, sur leur port INTERNE.
+      # Ces valeurs remplacent celles du .env (prévues pour ton PC).
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      PREFECT_API_URL: http://prefect:4200/api
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      PUSHGATEWAY_URL: http://pushgateway:9091
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prefect:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    # API de prévision : http://127.0.0.1:18800/docs
+    # Sert le modèle CHAMPION du registre MLflow (repli sur la base si MLflow est arrêté).
+    image: smartsupply-app:latest            # même image que le pipeline (construite par lui)
+    container_name: smartsupply_api
+    command: ["uvicorn", "smartsupply.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "127.0.0.1:${API_PORT:-18800}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pipeline:
+        condition: service_started           # garantit que l'image est construite
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/sante')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Surveillance technique : Prometheus relève les chiffres de tous les services.
+  # ---------------------------------------------------------------------------
+  pushgateway:
+    # Boîte de dépôt : le cycle y laisse ses chiffres à la fin de chaque passage.
+    image: prom/pushgateway:v1.11.3
+    container_name: smartsupply_pushgateway
+    user: root                             # l'image tourne en « nobody », qui ne peut pas écrire dans le volume
+    command: ["--persistence.file=/data/metrics", "--persistence.interval=1m"]
+    ports:
+      - "127.0.0.1:${PUSHGATEWAY_PORT:-19091}:9091"
+    volumes:
+      - pushgatewaydata:/data              # les chiffres survivent à un redémarrage
+    restart: unless-stopped
+
+  postgres-exporter:
+    # Traduit l'état de PostgreSQL (connexions, taille, transactions...) pour Prometheus.
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.19.1
+    container_name: smartsupply_postgres_exporter
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    # http://127.0.0.1:19090 — historique de 90 jours, règles d'alerte dans docker/prometheus/alerts.yml
+    image: prom/prometheus:v3.13.5
+    container_name: smartsupply_prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=90d
+      - --web.enable-lifecycle             # recharger la config sans redémarrer
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./docker/prometheus:/etc/prometheus:ro
+      - prometheusdata:/prometheus
+    depends_on:
+      - pushgateway
+      - postgres-exporter
+      - alertmanager
+    restart: unless-stopped
+
+  alertmanager:
+    # Reçoit les alertes de Prometheus et les envoie PAR E-MAIL : http://127.0.0.1:19093
+    # Adresse et serveur viennent de .env (SMTP_*, ALERT_EMAIL_TO). Au démarrage, ils sont
+    # placés dans une copie de la configuration ; le mot de passe va dans un fichier à part.
+    image: prom/alertmanager:v0.33.1
+    container_name: smartsupply_alertmanager
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com:587}
+      SMTP_USER: ${SMTP_USER:-a-configurer@example.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-a-configurer@example.com}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        printf '%s' "$$SMTP_PASSWORD" > /tmp/smtp_password &&
+        sed -e "s|__SMTP_HOST__|$$SMTP_HOST|" -e "s|__SMTP_USER__|$$SMTP_USER|g"
+        -e "s|__ALERT_EMAIL_TO__|$$ALERT_EMAIL_TO|" /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml &&
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml
+        --storage.path=/alertmanager --web.external-url=http://127.0.0.1:${ALERTMANAGER_PORT:-19093}
+    ports:
+      - "127.0.0.1:${ALERTMANAGER_PORT:-19093}:9093"
+    volumes:
+      - ./docker/alertmanager:/etc/alertmanager:ro
+      - alertmanagerdata:/alertmanager       # alertes en cours et mises en sourdine
+    restart: unless-stopped
+
+  grafana:
+    # Tableaux de bord : http://127.0.0.1:19300 (dossier « SmartSupply »)
+    image: grafana/grafana:13.3.1
+    container_name: smartsupply_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_LANGUAGE: fr-FR
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      # Pas d'appels à grafana.com (mises à jour, extensions) : tout tourne en local.
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/smartsupply-cycle.json
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-}   # lu par provisioning/datasources
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-19300}:3000"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  prefectdata:
+  mlflowartifacts:
+  pushgatewaydata:
+  prometheusdata:
+  alertmanagerdata:
+  grafanadata:

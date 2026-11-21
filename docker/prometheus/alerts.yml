@@ -1,0 +1,77 @@
+# Règles d'alerte : visibles dans Prometheus (onglet Alerts), notifiées ensuite par Grafana.
+groups:
+  - name: smartsupply
+    rules:
+      - alert: CycleEnRetard
+        # Le cycle tourne à 2 h 30 + rattrapages toutes les 3 h : 26 h sans réussite = anormal.
+        expr: time() - smartsupply_pipeline_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: {severity: critique}
+        annotations:
+          summary: "Le cycle n'a pas réussi depuis plus de 26 h"
+          description: "Dernière réussite il y a {{ $value | humanizeDuration }}. Voir Prefect : http://127.0.0.1:14200"
+
+      - alert: CycleEnEchec
+        expr: smartsupply_pipeline_last_run_success == 0
+        labels: {severity: critique}
+        annotations:
+          summary: "Le dernier passage du cycle a échoué"
+          description: "Détail dans Prefect (http://127.0.0.1:14200) et dans ops.pipeline_runs."
+
+      - alert: DonneesPasAJour
+        # La journée d'hier doit être là au plus tard à 4 h du matin (2 jours + 4 h après minuit UTC).
+        expr: time() - smartsupply_data_last_day_timestamp_seconds > (2 * 86400 + 4 * 3600)
+        for: 30m
+        labels: {severity: attention}
+        annotations:
+          summary: "Il manque la journée d'hier dans les données"
+
+      - alert: DeriveForte
+        expr: smartsupply_drift_features{level="forte"} > 0
+        labels: {severity: attention}
+        annotations:
+          summary: "Dérive forte sur {{ $value }} variable(s) du modèle"
+          description: "Les données récentes ne ressemblent plus à celles de l'entraînement (PSI > 0,25). Voir ml.drift_metrics."
+
+      - alert: ErreurReelleElevee
+        # Erreur mesurée sur 8 semaines à l'entraînement : ~12 %. Au-delà de 18 % en moyenne sur 4 semaines : dégradation.
+        expr: smartsupply_real_wape_28d > 0.18
+        labels: {severity: attention}
+        annotations:
+          summary: "Erreur réelle moyenne de {{ $value | humanizePercentage }} sur 4 semaines"
+
+      - alert: ModelePasMeilleurQueNaif
+        expr: smartsupply_model_wape >= smartsupply_model_baseline_wape
+        labels: {severity: critique}
+        annotations:
+          summary: "Le modèle en service ne bat plus la méthode naïve"
+
+      - alert: ServiceArrete
+        expr: up == 0
+        for: 5m
+        labels: {severity: critique}
+        annotations:
+          summary: "{{ $labels.job }} ne répond plus à Prometheus"
+
+      - alert: ApiLente
+        # 95 % des requêtes doivent répondre en moins de 2 s.
+        expr: histogram_quantile(0.95, sum by (le) (rate(smartsupply_api_request_duration_seconds_bucket[10m]))) > 2
+        for: 10m
+        labels: {severity: attention}
+        annotations:
+          summary: "L'API de prévision répond lentement (95 % des requêtes > {{ $value | humanizeDuration }})"
+
+      - alert: ApiErreurs
+        expr: sum(rate(smartsupply_api_requests_total{status=~"5.."}[10m])) > 0
+        for: 5m
+        labels: {severity: attention}
+        annotations:
+          summary: "L'API de prévision renvoie des erreurs (code 5xx)"
+          description: "Souvent : aucun modèle chargeable. Voir http://127.0.0.1:18800/sante"
+
+      - alert: PostgresArrete
+        expr: pg_up == 0
+        for: 2m
+        labels: {severity: critique}
+        annotations:
+          summary: "PostgreSQL ne répond plus à l'exportateur"

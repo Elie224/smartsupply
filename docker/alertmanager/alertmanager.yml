@@ -1,0 +1,47 @@
+# Alertmanager de SmartSupply : reçoit les alertes de Prometheus (docker/prometheus/alerts.yml)
+# et les envoie PAR E-MAIL. Interface : http://127.0.0.1:19093
+#
+# Rien de personnel n'est écrit ici. Au démarrage (voir docker-compose.yml), les valeurs
+# de .env remplacent les repères __...__ :
+#   SMTP_HOST      serveur d'envoi, ex. smtp.gmail.com:587
+#   SMTP_USER      ton adresse (compte d'envoi)
+#   ALERT_EMAIL_TO adresse qui reçoit les alertes (souvent la même)
+#   SMTP_PASSWORD  mot de passe d'application (recopié dans un fichier, jamais dans ce texte)
+global:
+  smtp_smarthost: "__SMTP_HOST__"
+  smtp_from: "SmartSupply <__SMTP_USER__>"
+  smtp_auth_username: "__SMTP_USER__"
+  smtp_auth_password_file: /tmp/smtp_password
+  smtp_require_tls: true
+
+route:
+  receiver: email
+  group_by: [alertname]
+  group_wait: 30s          # attend 30 s pour regrouper les alertes qui arrivent ensemble
+  group_interval: 5m
+  repeat_interval: 12h     # rappel toutes les 12 h tant que le problème dure
+
+receivers:
+  - name: email
+    email_configs:
+      - to: "__ALERT_EMAIL_TO__"
+        send_resolved: true    # e-mail aussi quand le problème est réglé
+        headers:
+          Subject: >-
+            [SmartSupply] {{ if eq .Status "firing" }}ALERTE{{ else }}RÉSOLU{{ end }} — {{ .CommonLabels.alertname }}
+        html: |-
+          <h2 style="color:{{ if eq .Status "firing" }}#c62828{{ else }}#2e7d32{{ end }}">
+            {{ if eq .Status "firing" }}🔴 Alerte en cours{{ else }}✅ Problème résolu{{ end }} : {{ .CommonLabels.alertname }}
+          </h2>
+          {{ range .Alerts }}
+          <p><b>{{ .Annotations.summary }}</b><br>
+          {{ with .Annotations.description }}{{ . }}<br>{{ end }}
+          Gravité : {{ .Labels.severity }} · depuis le {{ .StartsAt.Local.Format "02/01/2006 à 15:04" }}</p>
+          {{ end }}
+          <p style="color:#666">Tableaux de bord : http://127.0.0.1:19300 · Alertes : http://127.0.0.1:19090/alerts</p>
+        text: |-
+          {{ range .Alerts }}{{ .Annotations.summary }}
+          {{ with .Annotations.description }}{{ . }}
+          {{ end }}Gravité : {{ .Labels.severity }} · depuis le {{ .StartsAt.Local.Format "02/01/2006 à 15:04" }}
+
+          {{ end }}

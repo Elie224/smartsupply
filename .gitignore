@@ -1,0 +1,28 @@
+# Secrets : ne jamais versionner
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Données générées (reconstruisibles depuis PostgreSQL)
+data/
+*.dump
+pgadmin_servers.json
+
+# Outils
+.ruff_cache/
+.streamlit/secrets.toml
+sortie_locale/
+mlruns/
+.ipynb_checkpoints/
+
+# Système / éditeurs
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

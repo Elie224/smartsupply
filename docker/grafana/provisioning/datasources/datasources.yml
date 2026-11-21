@@ -1,0 +1,36 @@
+# Sources de données de Grafana, créées automatiquement au démarrage.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 30s
+      alertmanagerUid: alertmanager
+
+  - name: SmartSupply (PostgreSQL)
+    uid: smartsupply-pg
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: postgres:5432
+    user: grafana_reader                     # lecture seule, schéma analytics uniquement
+    jsonData:
+      database: smartsupply
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD         # vient de .env, jamais écrit ici
+
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

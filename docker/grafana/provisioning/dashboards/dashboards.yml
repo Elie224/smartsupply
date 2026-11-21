@@ -1,0 +1,11 @@
+# Les tableaux de bord sont des fichiers JSON (docker/grafana/dashboards), chargés au démarrage.
+apiVersion: 1
+
+providers:
+  - name: smartsupply
+    folder: SmartSupply
+    type: file
+    allowUiUpdates: true          # modifiables dans l'interface (ré-exporter le JSON pour les garder)
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana/dashboards

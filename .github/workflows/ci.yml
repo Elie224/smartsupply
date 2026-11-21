@@ -1,0 +1,48 @@
+# Intégration continue : à chaque push et pull request, les tests unitaires tournent sur GitHub.
+# (Les tests d'intégration ont besoin de la base PostgreSQL du projet : ils restent en local.)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Installer le projet
+        run: pip install -e ".[dev]" httpx
+
+      - name: Tests unitaires
+        run: pytest tests/unit -q
+
+      - name: Le site Streamlit démarre (données de test)
+        run: |
+          pip install -r app/requirements.txt
+          python - <<'EOF'
+          import json, pathlib
+          d = pathlib.Path("/tmp/site"); d.mkdir()
+          (d / "etat.json").write_text(json.dumps({
+              "publie_le": "2026-01-01T00:00:00+00:00", "donnees_jusqu_au": "2025-12-31",
+              "prevision_du": "2025-12-31", "cycle": {"statut": "ok"}, "modele": None}))
+          EOF
+          python - <<'EOF'
+          import os
+          os.environ["SMARTSUPPLY_DATA_DIR"] = "/tmp/site"
+          from streamlit.testing.v1 import AppTest
+          at = AppTest.from_file("app/streamlit_app.py", default_timeout=120).run()
+          assert not at.exception, [e.value for e in at.exception]
+          print("Site OK")
+          EOF
