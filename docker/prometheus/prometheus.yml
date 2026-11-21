@@ -7,7 +7,7 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
-# Les alertes déclenchées partent vers Alertmanager, qui les envoie sur Discord.
+# Les alertes déclenchées partent vers Alertmanager, qui les envoie par e-mail.
 alerting:
   alertmanagers:
     - static_configs:

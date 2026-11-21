@@ -81,6 +81,18 @@ Les runs déjà présents dans MLflow ne sont pas effacés : supprimer l'expéri
 | Le site montre des données d'hier | Normal avant 2 h 30. Sinon : le cycle a-t-il tourné (`smartsupply.health`) ? Les fichiers sont mis en cache 30 min par le site |
 | « Simulation indisponible » sur le site | Versions de LightGBM / scikit-learn différentes entre l'image et le site : comparer `etat.json → versions` à `app/requirements.txt` |
 
+## 4 ter. Grafana Cloud (tableau public)
+
+- Vérifier l'envoi : `docker compose logs prometheus | Select-String "Grafana Cloud"` (doit dire « envoi activé »), puis dans Grafana Cloud > Explore : `smartsupply_model_wape`.
+- `401` / `403` dans `docker compose logs prometheus` : jeton faux ou sans `metrics:write` → nouveau jeton dans `.env`, puis `docker compose up -d --force-recreate prometheus`.
+- Après une modification du tableau public : `& $py scripts/build_grafana_dashboards.py`, puis réimporter `docker/grafana/cloud/smartsupply-public.json` dans Grafana Cloud (même uid : il remplace l'ancien, le lien public reste le même).
+
+## 4 quater. MLflow public (DagsHub)
+
+- Synchroniser à la main : `& $py -m smartsupply.models.tracking` (affiche le local puis DagsHub).
+- `DagsHub : échec (... 401 ...)` : jeton faux ou expiré → nouveau jeton (DagsHub > Your Settings > Tokens) dans `.env`, puis `docker compose up -d --force-recreate pipeline`.
+- Une panne de DagsHub n'arrête ni le cycle ni le MLflow local : le retard est rattrapé au passage suivant.
+
 ## 5. Non encore outillé
 
 - **Retour arrière du champion** : le modèle en service est le dernier retenu dans `ml.model_runs` ; il n'existe pas encore de commande pour revenir à un modèle précédent.

@@ -147,8 +147,13 @@ services:
     # http://127.0.0.1:19090 — historique de 90 jours, règles d'alerte dans docker/prometheus/alerts.yml
     image: prom/prometheus:v3.13.5
     container_name: smartsupply_prometheus
+    # start.sh ajoute l'envoi vers Grafana Cloud si GRAFANA_CLOUD_* sont dans .env
+    environment:
+      GRAFANA_CLOUD_PROM_URL: ${GRAFANA_CLOUD_PROM_URL:-}
+      GRAFANA_CLOUD_PROM_USER: ${GRAFANA_CLOUD_PROM_USER:-}
+      GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN:-}
+    entrypoint: ["/bin/sh", "/etc/prometheus/start.sh"]
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=90d
       - --web.enable-lifecycle             # recharger la config sans redémarrer

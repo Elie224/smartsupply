@@ -8,7 +8,8 @@
     5. prédit la demande des 7 prochains jours (ml.forecasts) -> visible le matin dans Power BI ;
     6. surveille le modèle en service : dérive des données (PSI) et erreur réelle
        des prévisions dont les ventes sont connues (ml.monitoring_daily) ;
-    7. recopie les nouveaux entraînements et la surveillance dans MLflow (http://127.0.0.1:15000) ;
+    7. recopie les nouveaux entraînements et la surveillance dans MLflow (http://127.0.0.1:15000),
+       et dans la copie publique DagsHub si DAGSHUB_* sont dans .env ;
     8. publie ses chiffres pour Prometheus (durées, résultat, modèle, dérive...) via le
        Pushgateway : http://127.0.0.1:19090 (smartsupply.metrics).
        MLflow arrêté ne fait jamais échouer le cycle : c'est rattrapé au passage suivant ;
@@ -59,7 +60,7 @@ from smartsupply.metrics import push as push_metrics  # noqa: E402
 from smartsupply.generator.runner import simulate_pending_days  # noqa: E402
 from smartsupply.models.nightly import forecast_latest, retrain  # noqa: E402
 from smartsupply.models.monitoring import run_monitoring  # noqa: E402
-from smartsupply.models.tracking import sync as sync_mlflow  # noqa: E402
+from smartsupply.models.tracking import sync_all as sync_mlflow  # noqa: E402
 from smartsupply.publish import publish as publish_public  # noqa: E402
 from smartsupply.quality.checks import run_quality_checks  # noqa: E402
 

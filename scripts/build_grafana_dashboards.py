@@ -8,6 +8,10 @@ Trois tableaux, rangés dans le dossier « SmartSupply » de Grafana :
     - Infrastructure : services joignables, PostgreSQL, MLflow, mémoire.
 Sources : Prometheus (chiffres relevés toutes les 30 s) et PostgreSQL (vues analytics,
 compte grafana_reader en lecture seule).
+
+Plus un tableau PUBLIC pour Grafana Cloud (docker/grafana/cloud/smartsupply-public.json) :
+uniquement des chiffres Prometheus (Grafana Cloud n'a pas accès à la base du PC), envoyés
+par Prometheus avec remote_write. À importer dans Grafana Cloud puis à partager par lien.
 """
 from __future__ import annotations
 
@@ -15,6 +19,7 @@ import json
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / "docker" / "grafana" / "dashboards"
+CLOUD_OUT = OUT.parent / "cloud"
 PROM = {"type": "prometheus", "uid": "prometheus"}
 PG = {"type": "grafana-postgresql-datasource", "uid": "smartsupply-pg"}
 
@@ -146,7 +151,7 @@ def cycle() -> dict:
              thresholds=steps((None, BLUE)), text=True),
         table("Alertes en cours", (0, 5, 24, 5),
               [prom('ALERTS{alertstate="firing"}', instant=True)],
-              description="Règles dans docker/prometheus/alerts.yml ; envoyées sur Discord par Alertmanager.",
+              description="Règles dans docker/prometheus/alerts.yml ; envoyées par e-mail par Alertmanager.",
               overrides=renames(alertname="Alerte", severity="Gravité", job="Service")),
         row("Durées", 10),
         timeseries("Durée de chaque étape", (0, 11, 16, 9),
@@ -275,10 +280,93 @@ def infra() -> dict:
                      description="Les briques techniques répondent-elles ? Base, MLflow, Prefect, API, mémoire.")
 
 
+# -----------------------------------------------------------------------------
+# 4) Tableau public (Grafana Cloud) : Prometheus uniquement
+# -----------------------------------------------------------------------------
+def public() -> dict:
+    pct = "percentunit"
+    stage = steps((None, GREEN), (0.15, ORANGE), (0.18, RED))
+    vertical = {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                "colorMode": "background", "graphMode": "none", "textMode": "value_and_name",
+                "justifyMode": "center", "orientation": "vertical"}
+    p = [
+        row("Cycle automatique (chaque nuit à 2 h 30, heure de Paris)", 0),
+        stat("Dernier passage", (0, 1, 5, 4), prom("smartsupply_pipeline_last_run_success", instant=True),
+             mappings=SUCCESS_MAP),
+        stat("Dernière réussite il y a", (5, 1, 5, 4),
+             prom("time() - smartsupply_pipeline_last_success_timestamp_seconds", instant=True),
+             unit="s", thresholds=steps((None, GREEN), (26 * 3600, RED))),
+        stat("Données jusqu'au", (10, 1, 5, 4),
+             prom("smartsupply_data_last_day_timestamp_seconds * 1000", instant=True),
+             unit="time:DD/MM/YYYY", thresholds=steps((None, BLUE))),
+        stat("Produits en rupture probable (7 j)", (15, 1, 5, 4),
+             prom("smartsupply_forecast_stockout_products", instant=True),
+             thresholds=steps((None, GREEN), (1, ORANGE), (5, RED))),
+        stat("Alertes en cours", (20, 1, 4, 4), prom('count(ALERTS{alertstate="firing"}) or vector(0)', instant=True),
+             thresholds=steps((None, GREEN), (1, RED))),
+        timeseries("Durée de chaque étape du cycle", (0, 5, 16, 8),
+                   [prom("smartsupply_pipeline_step_duration_seconds", "{{step}}")], unit="s"),
+        timeseries("Demande prévue sur 7 jours (tous produits)", (16, 5, 8, 8),
+                   [prom("smartsupply_forecast_units_7d", "unités")], unit="none"),
+        row("Modèle en service (LightGBM, demande à 7 jours)", 13),
+        stat("Erreur du modèle (WAPE, 8 sem.)", (0, 14, 5, 4), prom("smartsupply_model_wape", instant=True),
+             unit=pct, decimals=1, thresholds=stage),
+        stat("Méthode naïve (même fenêtre)", (5, 14, 5, 4),
+             prom("smartsupply_model_baseline_wape", instant=True), unit=pct, decimals=1,
+             thresholds=steps((None, GREY))),
+        stat("Erreur réelle (4 dern. sem.)", (10, 14, 5, 4), prom("smartsupply_real_wape_28d", instant=True),
+             unit=pct, decimals=1, thresholds=stage,
+             description="Prévisions comparées aux ventes réelles, 7 jours après."),
+        stat("Biais", (15, 14, 4, 4), prom("smartsupply_model_bias", instant=True), unit=pct, decimals=1,
+             thresholds=steps((None, RED), (-0.05, GREEN), (0.05, RED))),
+        stat("Dérive la plus forte (PSI)", (19, 14, 5, 4), prom("smartsupply_drift_max_psi", instant=True),
+             decimals=2, thresholds=PSI_STEPS),
+        timeseries("Erreur : modèle, méthode naïve, réalité", (0, 18, 12, 9), [
+            prom("smartsupply_model_wape", "modèle (entraînement)", "A"),
+            prom("smartsupply_model_baseline_wape", "méthode naïve", "B"),
+            prom("smartsupply_real_wape_28d", "réelle (4 semaines)", "C")],
+            unit=pct, thresholds=steps((None, "transparent"), (0.18, RED)), threshold_lines=True),
+        panel("bargauge", "Dérive de chaque variable (PSI)", (12, 18, 12, 9),
+              [prom("sort_desc(smartsupply_drift_psi)", "{{feature}}", instant=True)],
+              thresholds=PSI_STEPS, decimals=2,
+              options={"orientation": "horizontal", "displayMode": "basic", "showUnfilled": True,
+                       "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                       "minVizHeight": 10, "valueMode": "color"}, custom={},
+              description="< 0,10 stable · 0,10 à 0,25 à surveiller · > 0,25 dérive forte."),
+        panel("stat", "Entraînements depuis le début", (0, 27, 24, 4),
+              [prom("smartsupply_model_runs", "{{decision}}", instant=True)],
+              thresholds=steps((None, BLUE)), options=vertical),
+        row("Services (PC du projet)", 31),
+        panel("stat", "Services en marche", (0, 32, 24, 4), [prom("up", "{{job}}", instant=True)],
+              mappings=UP_MAP, thresholds=steps((None, RED), (1, GREEN)), options=vertical),
+        timeseries("API : requêtes par seconde", (0, 36, 8, 8),
+                   [prom("sum by (route) (rate(smartsupply_api_requests_total[5m]))", "{{route}}")],
+                   unit="reqps"),
+        timeseries("Base : transactions par seconde", (8, 36, 8, 8),
+                   [prom('rate(pg_stat_database_xact_commit{datname="smartsupply"}[5m])', "validées")],
+                   unit="ops"),
+        timeseries("Mémoire utilisée par service", (16, 36, 8, 8),
+                   [prom("process_resident_memory_bytes", "{{job}}")], unit="bytes"),
+    ]
+    d = dashboard("ss-public", "SmartSupply AI — MLOps (public)", p, time_from="now-7d", refresh="5m",
+                  description="Cycle nocturne, qualité du modèle et services du projet SmartSupply AI "
+                              "(données 100 % synthétiques). Code : github.com/Elie224/smartsupply")
+    d["links"] = []
+    # Import dans Grafana Cloud : la source Prometheus est choisie au moment de l'import.
+    text_json = json.dumps(d, ensure_ascii=False).replace('"uid": "prometheus"', '"uid": "${DS_PROMETHEUS}"')
+    d = json.loads(text_json)
+    d["__inputs"] = [{"name": "DS_PROMETHEUS", "label": "Prometheus", "type": "datasource",
+                      "pluginId": "prometheus", "pluginName": "Prometheus"}]
+    d.pop("id", None)
+    return d
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    for name, build in (("cycle", cycle), ("modele", modele), ("infrastructure", infra)):
-        path = OUT / f"smartsupply-{name}.json"
+    CLOUD_OUT.mkdir(parents=True, exist_ok=True)
+    for folder, name, build in ((OUT, "cycle", cycle), (OUT, "modele", modele),
+                                (OUT, "infrastructure", infra), (CLOUD_OUT, "public", public)):
+        path = folder / f"smartsupply-{name}.json"
         path.write_text(json.dumps(build(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"écrit : {path.relative_to(OUT.parents[2])}")
 

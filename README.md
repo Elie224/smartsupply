@@ -172,6 +172,8 @@ Le modèle comble **≈ 70 %** de l'écart réductible entre la méthode naïve 
 ### Suivi et registre — MLflow
 Un run par entraînement (réglages, WAPE, MAE, biais, méthode naïve, décision, importance des variables). Le modèle retenu est enregistré dans `smartsupply-demande-7j` avec l'alias **`champion`**. La surveillance quotidienne est ajoutée au run du modèle en service : courbes `drift_max_psi`, `psi_<variable>`, `real_wape` en fonction des jours écoulés depuis son entraînement.
 
+**Copie publique sur DagsHub** (gratuit) : si `DAGSHUB_*` est dans `.env`, la même synchronisation part aussi vers le serveur MLflow du dépôt DagsHub relié à GitHub (`https://dagshub.com/Elie224/smartsupply.mlflow`). Les deux copies sont indépendantes : une panne de l'une ne bloque pas l'autre.
+
 ### Surveillance
 | Mesure | Règle |
 |---|---|
@@ -185,6 +187,7 @@ En plus, une **alerte Windows** (tâche planifiée, `smartsupply.health`) s'affi
 
 ### Tableaux de bord
 - **Grafana** (dossier SmartSupply) : *Cycle automatique*, *Modèle*, *Infrastructure* — générés par `scripts/build_grafana_dashboards.py`.
+- **Grafana Cloud (public)** : *SmartSupply AI — MLOps (public)*, une copie en lecture seule des chiffres Prometheus (cycle, modèle, dérive, services), envoyée par `remote_write` (`docker/prometheus/start.sh`, activé par `GRAFANA_CLOUD_*` dans `.env`). Tableau : `docker/grafana/cloud/smartsupply-public.json`.
 - **Power BI** : *Vue direction* (CA, marge, taux de service, état du cycle), *Prévisions* (produits à risque, historique des modèles, précision réelle), *Clients* (meilleurs, à suivre, en baisse, perdus).
 
 ---

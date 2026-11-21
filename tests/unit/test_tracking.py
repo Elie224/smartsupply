@@ -40,3 +40,43 @@ def test_serveur_absent_ne_bloque_pas(monkeypatch):
     assert tracking.server_available("http://127.0.0.1:9", timeout=1) is False
     result = tracking.sync(engine=None)                                 # ne touche pas à la base
     assert result["logged"] == 0 and "injoignable" in result["status"]
+
+
+def test_dagshub_non_configure(monkeypatch):
+    for k in ("DAGSHUB_REPO", "DAGSHUB_USER", "DAGSHUB_TOKEN"):
+        monkeypatch.setenv(k, "")
+    assert tracking.dagshub_target() is None
+    assert tracking.sync_dagshub(engine=None)["status"] == "non configuré"
+
+
+def test_dagshub_adresse_et_identifiants(monkeypatch):
+    monkeypatch.setenv("DAGSHUB_REPO", "moi/projet/")
+    monkeypatch.setenv("DAGSHUB_USER", "moi")
+    monkeypatch.setenv("DAGSHUB_TOKEN", "secret")
+    uri, creds = tracking.dagshub_target()
+    assert uri == "https://dagshub.com/moi/projet.mlflow"
+    assert creds == {"MLFLOW_TRACKING_USERNAME": "moi", "MLFLOW_TRACKING_PASSWORD": "secret"}
+
+
+def test_identifiants_retires_apres_usage(monkeypatch):
+    import os
+    monkeypatch.delenv("MLFLOW_TRACKING_USERNAME", raising=False)
+    with tracking._credentials({"MLFLOW_TRACKING_USERNAME": "moi"}):
+        assert os.environ["MLFLOW_TRACKING_USERNAME"] == "moi"
+    assert "MLFLOW_TRACKING_USERNAME" not in os.environ
+
+
+def test_echec_dagshub_remet_le_serveur_local(monkeypatch):
+    import os
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:9")
+    monkeypatch.setattr(tracking, "dagshub_target",
+                        lambda: ("http://127.0.0.1:8", {"MLFLOW_TRACKING_USERNAME": "u"}))
+
+    def boom(engine, uri, use_flags):
+        os.environ["MLFLOW_TRACKING_URI"] = uri          # comme mlflow.set_tracking_uri
+        raise ConnectionError("réseau")
+    monkeypatch.setattr(tracking, "_sync_to", boom)
+    result = tracking.sync_dagshub(engine=object())
+    assert result["status"].startswith("échec (ConnectionError")
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://127.0.0.1:9"
+    assert "MLFLOW_TRACKING_USERNAME" not in os.environ

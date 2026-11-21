@@ -15,7 +15,11 @@ La synchronisation est relançable sans risque : elle n'envoie que les entraîne
 absents de MLflow. Si MLflow est arrêté, rien ne casse : le retard est rattrapé
 au passage suivant.
 
-    python -m smartsupply.models.tracking      # synchronise à la main
+Copie publique (facultative) : si DAGSHUB_REPO, DAGSHUB_USER et DAGSHUB_TOKEN sont dans
+.env, la même chose est envoyée au serveur MLflow gratuit de DagsHub
+(https://dagshub.com/<DAGSHUB_REPO>.mlflow), consultable en ligne.
+
+    python -m smartsupply.models.tracking      # synchronise à la main (local + DagsHub)
 """
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ import json
 import os
 import tempfile
 import urllib.request
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -49,6 +54,32 @@ def tracking_uri() -> str:
     from dotenv import load_dotenv
     load_dotenv(PROJECT_ROOT / ".env")
     return os.getenv("MLFLOW_TRACKING_URI", f"http://127.0.0.1:{os.getenv('MLFLOW_PORT', '15000')}")
+
+
+def dagshub_target() -> tuple[str, dict[str, str]] | None:
+    """(adresse MLflow DagsHub, identifiants) si DAGSHUB_* sont dans .env, sinon None."""
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+    repo, user, token = (os.getenv(k, "").strip() for k in ("DAGSHUB_REPO", "DAGSHUB_USER", "DAGSHUB_TOKEN"))
+    if not (repo and user and token):
+        return None
+    return (f"https://dagshub.com/{repo.strip('/')}.mlflow",
+            {"MLFLOW_TRACKING_USERNAME": user, "MLFLOW_TRACKING_PASSWORD": token})
+
+
+@contextmanager
+def _credentials(creds: dict[str, str]):
+    """Identifiants MLflow le temps d'une synchronisation (le serveur local n'en a pas)."""
+    old = {k: os.environ.get(k) for k in creds}
+    os.environ.update(creds)
+    try:
+        yield
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def server_available(uri: str, timeout: float = 3.0) -> bool:
@@ -179,15 +210,50 @@ def _set_champion(client, champion_run_id: str | None) -> str | None:
 
 
 def sync(engine: Engine | None = None) -> dict:
-    """Envoie à MLflow les entraînements qui n'y sont pas encore, puis met à jour l'alias champion."""
+    """Envoie au MLflow LOCAL les entraînements qui n'y sont pas encore, puis met à jour l'alias champion."""
     uri = tracking_uri()
     if not server_available(uri):
         return {"status": f"MLflow injoignable ({uri}) : rattrapé au prochain passage", "logged": 0}
+    return _sync_to(engine or get_engine(), uri, use_flags=True)
 
+
+def sync_dagshub(engine: Engine | None = None) -> dict:
+    """Même synchronisation vers la copie publique DagsHub (si configurée)."""
+    target = dagshub_target()
+    if target is None:
+        return {"status": "non configuré", "logged": 0}
+    uri, creds = target
+    # mlflow.set_tracking_uri() écrit aussi MLFLOW_TRACKING_URI : on remet l'adresse locale
+    # après coup, sinon la synchronisation locale suivante partirait vers DagsHub.
+    local_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    try:
+        with _credentials(creds):
+            return _sync_to(engine or get_engine(), uri, use_flags=False)
+    except Exception as exc:  # noqa: BLE001  (réseau, jeton...) : rattrapé au prochain passage
+        return {"status": f"échec ({type(exc).__name__} : {str(exc)[:150]})", "logged": 0}
+    finally:
+        import mlflow
+        if local_uri is None:
+            os.environ.pop("MLFLOW_TRACKING_URI", None)
+        else:
+            os.environ["MLFLOW_TRACKING_URI"] = local_uri
+        mlflow.set_tracking_uri(tracking_uri())
+
+
+def sync_all(engine: Engine | None = None) -> dict:
+    """Serveur local puis DagsHub. Statut lisible des deux."""
+    engine = engine or get_engine()
+    local = sync(engine)
+    remote = sync_dagshub(engine)
+    status = local["status"] if remote["status"] == "non configuré" \
+        else f"{local['status']} | DagsHub : {remote['status']}"
+    return {"status": status, "local": local, "dagshub": remote}
+
+
+def _sync_to(engine: Engine, uri: str, *, use_flags: bool) -> dict:
     import mlflow
     from mlflow import MlflowClient
 
-    engine = engine or get_engine()
     mlflow.set_tracking_uri(uri)
     client = MlflowClient(uri)
     experiment_id = mlflow.set_experiment(EXPERIMENT).experiment_id
@@ -221,7 +287,8 @@ def sync(engine: Engine | None = None) -> dict:
     if logged:   # nouveaux runs : on relit la correspondance base -> MLflow
         known = {r.data.tags.get(RUN_ID_TAG): r.info.run_id
                  for r in client.search_runs([experiment_id], max_results=50000)}
-    days = _sync_monitoring(client, engine, known, {r["run_id"]: r["data_until"] for r in rows})
+    days = _sync_monitoring(client, engine, known, {r["run_id"]: r["data_until"] for r in rows},
+                            use_flags=use_flags)
     status = (f"{logged} entraînement(s) envoyé(s), {registered} modèle(s) enregistré(s)"
               if logged else "à jour")
     if version is not None:
@@ -244,30 +311,47 @@ def monitoring_metrics(day: dict, psi_by_feature: dict[str, float]) -> dict[str,
     return {k: float(v) for k, v in metrics.items()}
 
 
-def _sync_monitoring(client, engine: Engine, mlflow_runs: dict, data_until: dict) -> int:
-    """Ajoute aux runs MLflow les journées de surveillance pas encore recopiées."""
+def _sync_monitoring(client, engine: Engine, mlflow_runs: dict, data_until: dict,
+                     use_flags: bool = True) -> int:
+    """Ajoute aux runs MLflow les journées de surveillance pas encore recopiées.
+
+    Serveur local : les drapeaux drift_logged / real_logged de la base disent ce qui est déjà
+    parti. Autre serveur (DagsHub) : on regarde directement les jours déjà présents dans
+    MLflow, pour que les deux copies restent indépendantes."""
     from mlflow.entities import Metric
 
+    where = ("(NOT drift_logged AND max_psi IS NOT NULL) OR (NOT real_logged AND real_wape IS NOT NULL)"
+             if use_flags else "max_psi IS NOT NULL OR real_wape IS NOT NULL")
     with engine.connect() as conn:
-        days = [dict(r) for r in conn.execute(text("""
+        days = [dict(r) for r in conn.execute(text(f"""
             SELECT as_of_date, model_run_id, max_psi, n_watch, n_strong, drift_logged,
                    real_wape, real_bias, real_logged
-            FROM ml.monitoring_daily
-            WHERE (NOT drift_logged AND max_psi IS NOT NULL) OR (NOT real_logged AND real_wape IS NOT NULL)
-            ORDER BY as_of_date""")).mappings()]
-    sent = 0
+            FROM ml.monitoring_daily WHERE {where} ORDER BY as_of_date""")).mappings()]
+    sent, history = 0, {}
     for day in days:
         mlflow_run, until = mlflow_runs.get(day["model_run_id"]), data_until.get(day["model_run_id"])
         if mlflow_run is None or until is None:
             continue                                  # modèle pas encore dans MLflow : plus tard
+        step = (day["as_of_date"] - until).days
+        if not use_flags:
+            if mlflow_run not in history:
+                history[mlflow_run] = tuple(
+                    {m.step for m in client.get_metric_history(mlflow_run, name)}
+                    for name in ("drift_max_psi", "real_wape"))
+            drift_steps, real_steps = history[mlflow_run]
+            day = {**day, "drift_logged": step in drift_steps, "real_logged": step in real_steps}
         with engine.connect() as conn:
             psi_by_feature = dict(conn.execute(text(
                 "SELECT feature, psi FROM ml.drift_metrics WHERE as_of_date = :d"),
                 {"d": day["as_of_date"]}).all())
         metrics = monitoring_metrics(day, psi_by_feature)
-        step = (day["as_of_date"] - until).days
+        if not metrics:
+            continue
         ts = _ms(datetime.combine(day["as_of_date"], datetime.min.time()).astimezone())
         client.log_batch(mlflow_run, metrics=[Metric(k, v, ts, step) for k, v in metrics.items()])
+        if not use_flags:
+            sent += 1
+            continue
         with engine.begin() as conn:
             conn.execute(text("""
                 UPDATE ml.monitoring_daily
@@ -281,6 +365,10 @@ def _sync_monitoring(client, engine: Engine, mlflow_runs: dict, data_until: dict
 def main() -> None:
     print(f"MLflow : {tracking_uri()}")
     print(sync()["status"])
+    target = dagshub_target()
+    if target:
+        print(f"DagsHub : {target[0]}")
+        print(sync_dagshub()["status"])
 
 
 if __name__ == "__main__":

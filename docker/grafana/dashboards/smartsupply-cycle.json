@@ -288,7 +288,7 @@
     {
       "type": "table",
       "title": "Alertes en cours",
-      "description": "Règles dans docker/prometheus/alerts.yml ; envoyées sur Discord par Alertmanager.",
+      "description": "Règles dans docker/prometheus/alerts.yml ; envoyées par e-mail par Alertmanager.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
