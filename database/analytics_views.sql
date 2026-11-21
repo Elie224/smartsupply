@@ -263,7 +263,8 @@ SELECT
     round(100 * bias::numeric, 2)          AS bias_pct,
     round(100 * champion_wape::numeric, 2) AS champion_wape_pct,
     promoted, decision,
-    run_id = (SELECT run_id FROM ml.model_runs WHERE promoted ORDER BY trained_at DESC LIMIT 1) AS is_current
+    run_id = (SELECT run_id FROM ml.model_runs WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1) AS is_current,
+    withdrawn_at, withdrawn_reason          -- retour arrière : modèle retiré du service, et pourquoi
 FROM ml.model_runs;
 
 -- ---------------------------------------------------------------------

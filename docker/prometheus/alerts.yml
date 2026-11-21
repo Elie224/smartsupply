@@ -75,3 +75,21 @@ groups:
         labels: {severity: critique}
         annotations:
           summary: "PostgreSQL ne répond plus à l'exportateur"
+
+      - alert: SauvegardeAncienne
+        # Le service « backup » sauvegarde chaque semaine : plus de 8 jours = il ne tourne plus.
+        expr: time() - smartsupply_backup_last_success_timestamp_seconds > 8 * 86400
+        for: 1h
+        labels: {severity: attention}
+        annotations:
+          summary: "Aucune sauvegarde de la base depuis plus de 8 jours"
+          description: "Dernière sauvegarde il y a {{ $value | humanizeDuration }}. Voir : docker compose logs backup"
+
+      - alert: SauvegardeAbsente
+        # Aucun chiffre de sauvegarde alors que le Pushgateway répond : le service n'a jamais réussi.
+        expr: absent(smartsupply_backup_last_success_timestamp_seconds) and on() up{job="pipeline"} == 1
+        for: 2h
+        labels: {severity: attention}
+        annotations:
+          summary: "Aucune sauvegarde de la base n'a encore réussi"
+          description: "Voir : docker compose logs backup"

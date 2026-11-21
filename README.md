@@ -177,6 +177,9 @@ Un run par entraînement (réglages, WAPE, MAE, biais, méthode naïve, décisio
 
 **Copie publique sur DagsHub** (gratuit) : si `DAGSHUB_*` est dans `.env`, la même synchronisation part aussi vers le serveur MLflow du dépôt DagsHub relié à GitHub (`https://dagshub.com/Elie224/smartsupply.mlflow`). Les deux copies sont indépendantes : une panne de l'une ne bloque pas l'autre.
 
+### Retour arrière (rollback)
+`python -m smartsupply.models.rollback --precedent --raison "..."` retire le modèle en service et remet le précédent modèle retenu (ou `--vers RUN_ID`). Le modèle en service est **le dernier modèle retenu et non retiré** : le cycle de nuit, l'API, l'alias MLflow `champion`, le site public et Prometheus suivent tous cette règle, et la commande les met à jour aussitôt. Rien n'est effacé (`--annuler RUN_ID`), la raison du retrait est gardée dans la base.
+
 ### Surveillance
 | Mesure | Règle |
 |---|---|
@@ -256,7 +259,7 @@ Les tests couvrent notamment : l'absence de fuite d'information future dans les 
 ## 10. Structure du dépôt
 
 ```text
-├── docker-compose.yml          # 10 services
+├── docker-compose.yml          # 11 services (dont la sauvegarde hebdomadaire)
 ├── Dockerfile                  # image du pipeline et de l'API
 ├── pyproject.toml              # dépendances (versions minimales, MLflow figé)
 ├── .env.example                # toutes les variables (sans secret)
@@ -303,18 +306,20 @@ Les tests couvrent notamment : l'absence de fuite d'information future dans les 
 | 8. Réentraînement automatique avec règle de mise en service | ✅ |
 | 9. Surveillance (dérive, erreur réelle), Prometheus, Grafana, alertes e-mail | ✅ |
 | 10. CI GitHub Actions, site public Streamlit mis à jour chaque nuit | ✅ |
-| 11. Rollback du champion, captures d'écran, dictionnaire de données | ⏳ à faire |
+| 11. Retour arrière du modèle, sauvegardes automatiques, dictionnaire de données | ✅ |
+| 12. Captures d'écran, démonstration de dérive | ⏳ à faire |
 
 **Prochaines étapes envisagées :**
 - Prévisions par entrepôt et jour par jour ; réapprovisionnement piloté par le modèle.
 - Scénario de dérive contrôlée (hausse de demande à une date donnée) pour démontrer la boucle complète.
-- Retour arrière (rollback) vers un ancien champion ; authentification de l'API.
-- Dictionnaire de données (`docs/data_dictionary.md`) et captures d'écran.
+- Authentification de l'API locale (la version en ligne est en lecture seule).
+- Captures d'écran des tableaux de bord.
 
 ---
 
 ## 12. Sécurité et limites
 
+- **Sauvegardes** : les bases `smartsupply` et `mlflow` sont sauvegardées chaque semaine dans `./backups` (8 gardées, chaque fichier relu avant d'être gardé, alerte si plus rien depuis 8 jours) ; restauration testée — voir [docs/runbook.md](docs/runbook.md).
 - `.env` (mots de passe, e-mail, mot de passe d'application) n'est jamais versionné ; toutes les valeurs ont un exemple dans `.env.example`.
 - Le site public ne lit que des fichiers déjà publiés : il n'a aucun accès à la base ni au PC. Le jeton GitHub ne peut écrire que dans ce dépôt.
 - Tous les ports sont ouverts sur `127.0.0.1` uniquement. L'API n'a **pas d'authentification** : elle ne doit pas être exposée telle quelle sur Internet.
@@ -328,6 +333,7 @@ Les tests couvrent notamment : l'absence de fuite d'information future dans les 
 Licence : [MIT](LICENSE).
 
 - [docs/architecture.md](docs/architecture.md) — composants, flux de données, schémas et vues
+- [docs/data_dictionary.md](docs/data_dictionary.md) — dictionnaire de données : les 35 tables et vues, colonne par colonne (généré : `python scripts/build_data_dictionary.py`)
 - [docs/runbook.md](docs/runbook.md) — exploitation : démarrer, vérifier, incidents connus et corrections
 - [docs/model_card.md](docs/model_card.md) — fiche du modèle : données, performances, limites
 - [docs/cahier_des_charges.md](docs/cahier_des_charges.md) — cadrage initial du projet (20/11/2026)

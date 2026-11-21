@@ -121,11 +121,12 @@ class Champion:
 
 
 def current_champion(engine: Engine) -> Champion | None:
-    """Le modèle en place = le dernier modèle mis en service."""
+    """Le modèle en place = le dernier modèle mis en service, sauf s'il a été retiré
+    (retour arrière : smartsupply.models.rollback)."""
     with engine.connect() as conn:
         row = conn.execute(text(
             "SELECT run_id, model_blob, wape, data_until FROM ml.model_runs "
-            "WHERE promoted ORDER BY trained_at DESC LIMIT 1"
+            "WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1"
         )).first()
     if row is None:
         return None

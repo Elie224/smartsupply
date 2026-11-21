@@ -23,6 +23,8 @@ $py = "C:\Users\KOURO\anaconda3\envs\smartsupply\python.exe"   # à mettre dans 
 | Tester l'envoi d'e-mail | `docker compose exec alertmanager amtool alert add TestSmartSupply severity=info --annotation=summary=TestEnvoi --alertmanager.url=http://localhost:9093` |
 | Régénérer les tableaux Grafana | `& $py scripts/build_grafana_dashboards.py` (Grafana les relit en 1 min) |
 | Lancer les tests | `& $py -m pytest -q` |
+| Voir les modèles retenus (lequel est en service) | `& $py -m smartsupply.models.rollback` |
+| **Retour arrière** : remettre le modèle précédent | `& $py -m smartsupply.models.rollback --precedent --raison "pourquoi"` (ou `--vers RUN_ID`) ; annuler : `--annuler RUN_ID` |
 | Publier le site public tout de suite | `& $py -m smartsupply.publish` (`--force` : même sans changement) |
 
 Après une modification du code : `docker compose build pipeline` puis `docker compose up -d` (le pipeline et l'API partagent l'image). Après une modification de `pyproject.toml`, la reconstruction retélécharge les dépendances (plusieurs minutes).
@@ -92,6 +94,20 @@ Les runs déjà présents dans MLflow ne sont pas effacés : supprimer l'expéri
 - Synchroniser à la main : `& $py -m smartsupply.models.tracking` (affiche le local puis DagsHub).
 - `DagsHub : échec (... 401 ...)` : jeton faux ou expiré → nouveau jeton (DagsHub > Your Settings > Tokens) dans `.env`, puis `docker compose up -d --force-recreate pipeline`.
 - Une panne de DagsHub n'arrête ni le cycle ni le MLflow local : le retard est rattrapé au passage suivant.
+
+## 4 quinquies. Sauvegardes de la base
+
+Le service `backup` sauvegarde les bases `smartsupply` et `mlflow` **chaque semaine** dans le dossier `backups` du projet (8 gardées par base, soit 2 mois). Chaque fichier est relu avant d'être gardé. Alertes : `SauvegardeAncienne` (plus de 8 jours), `SauvegardeAbsente` ; contrôle : `smartsupply.verify`.
+
+| Je veux… | Commande |
+|---|---|
+| Voir les sauvegardes | `Get-ChildItem backups` |
+| Sauvegarder tout de suite | `docker compose exec backup sh /scripts/backup.sh --maintenant` |
+| Voir ce que fait le service | `docker compose logs --tail 20 backup` |
+| **Tester** une sauvegarde (sans rien toucher) | `docker compose exec backup createdb smartsupply_test` puis `docker compose exec backup pg_restore --no-owner -d smartsupply_test /backups/<fichier>.dump` ; comparer, puis `docker compose exec backup dropdb smartsupply_test` |
+| **Restaurer** (remplace les données actuelles) | `docker compose stop pipeline api grafana` → `docker compose exec backup pg_restore --clean --if-exists -d smartsupply /backups/<fichier>.dump` → `docker compose up -d` |
+
+Les sauvegardes sont sur le même disque que la base : pour une vraie protection, copier de temps en temps le dossier `backups` ailleurs (clé USB, OneDrive...). Les rôles en lecture seule (Power BI, Grafana) ne sont pas dans les sauvegardes : après une réinstallation complète, relancer `database/roles.sql` et `database/roles_grafana.sql`.
 
 ## 5. Non encore outillé
 

@@ -276,6 +276,19 @@ def infra() -> dict:
                        "colorMode": "background", "graphMode": "none", "textMode": "value_and_name",
                        "justifyMode": "center", "orientation": "vertical"}),
     ]
+    p += [
+        row("Sauvegardes de la base", 31),
+        stat("Dernière sauvegarde il y a", (0, 32, 8, 5),
+             prom("time() - smartsupply_backup_last_success_timestamp_seconds", instant=True),
+             unit="s", thresholds=steps((None, GREEN), (8 * 86400, RED)),
+             description="Service « backup » : une sauvegarde par semaine dans ./backups. Rouge au-delà de 8 jours."),
+        panel("stat", "Taille de la dernière sauvegarde", (8, 32, 16, 5),
+              [prom("smartsupply_backup_size_bytes", "{{database}}", instant=True)],
+              unit="bytes", thresholds=steps((None, BLUE)),
+              options={"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False},
+                       "colorMode": "background", "graphMode": "none", "textMode": "value_and_name",
+                       "justifyMode": "center", "orientation": "vertical"}),
+    ]
     return dashboard("ss-infra", "SmartSupply — Infrastructure", p, time_from="now-24h",
                      description="Les briques techniques répondent-elles ? Base, MLflow, Prefect, API, mémoire.")
 

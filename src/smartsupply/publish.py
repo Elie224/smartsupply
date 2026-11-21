@@ -91,7 +91,7 @@ def build_bundle(engine: Engine) -> dict[str, bytes]:
                              (SELECT min(simulated_date) FROM raw.simulation_runs) AS debut""").iloc[0].to_dict()
         champion = conn.execute(text(
             "SELECT run_id, trained_at, data_until, wape, baseline_wape, bias, model_blob "
-            "FROM ml.model_runs WHERE promoted ORDER BY trained_at DESC LIMIT 1")).mappings().first()
+            "FROM ml.model_runs WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1")).mappings().first()
         last_day = forecasts["as_of_date"].max() if not forecasts.empty else None
         snapshots = (pd.read_sql(text(f"SELECT {', '.join(ALL_COLUMNS)} FROM ml.feature_snapshots "
                                       "WHERE as_of_date = :d ORDER BY product_id"), conn,

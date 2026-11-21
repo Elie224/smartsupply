@@ -12,6 +12,7 @@ venv/
 # Données générées (reconstruisibles depuis PostgreSQL)
 data/
 *.dump
+backups/
 pgadmin_servers.json
 
 # Outils

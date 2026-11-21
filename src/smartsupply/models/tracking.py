@@ -266,7 +266,7 @@ def _sync_to(engine: Engine, uri: str, *, use_flags: bool) -> dict:
         rows = [dict(r) for r in conn.execute(text(
             f"SELECT {RUN_COLUMNS} FROM ml.model_runs ORDER BY trained_at")).mappings()]
         champion = conn.execute(text(
-            "SELECT run_id FROM ml.model_runs WHERE promoted ORDER BY trained_at DESC LIMIT 1")).scalar()
+            "SELECT run_id FROM ml.model_runs WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1")).scalar()
 
     logged, registered = 0, 0
     for row in rows:

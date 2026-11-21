@@ -118,6 +118,28 @@ services:
   # ---------------------------------------------------------------------------
   # Surveillance technique : Prometheus relève les chiffres de tous les services.
   # ---------------------------------------------------------------------------
+  backup:
+    # Sauvegarde des bases « smartsupply » et « mlflow » chaque semaine dans ./backups (sur le PC),
+    # 8 gardées par base. Voir docker/backup/backup.sh ; restauration : docs/runbook.md.
+    image: postgres:16-alpine          # même version que le serveur (pg_dump compatible)
+    container_name: smartsupply_backup
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      BACKUP_EVERY_DAYS: ${BACKUP_EVERY_DAYS:-7}
+      BACKUP_KEEP: ${BACKUP_KEEP:-8}
+      PUSHGATEWAY_URL: http://pushgateway:9091
+    entrypoint: ["/bin/sh", "/scripts/backup.sh"]
+    volumes:
+      - ./docker/backup:/scripts:ro
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   pushgateway:
     # Boîte de dépôt : le cycle y laisse ses chiffres à la fin de chaque passage.
     image: prom/pushgateway:v1.11.3

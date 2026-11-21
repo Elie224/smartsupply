@@ -10,9 +10,11 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import text
@@ -121,7 +123,7 @@ def check_database(conn) -> None:
     # Modèle en service
     champion = conn.execute(text(
         "SELECT run_id, data_until, wape, baseline_wape, bias FROM ml.model_runs "
-        "WHERE promoted ORDER BY trained_at DESC LIMIT 1")).first()
+        "WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1")).first()
     if champion is None:
         error("Modèle en service", "aucun", "python -m smartsupply.models.nightly")
     else:
@@ -269,7 +271,7 @@ def check_mlflow() -> None:
         with get_engine().connect() as conn:
             n_db = conn.execute(text("SELECT count(*) FROM ml.model_runs")).scalar()
             champion = conn.execute(text(
-                "SELECT run_id FROM ml.model_runs WHERE promoted ORDER BY trained_at DESC LIMIT 1")).scalar()
+                "SELECT run_id FROM ml.model_runs WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1")).scalar()
         try:
             version = client.get_model_version_by_alias(tracking.REGISTERED_MODEL, tracking.CHAMPION_ALIAS)
             alias_run = client.get_run(version.run_id).data.tags.get(tracking.RUN_ID_TAG)
@@ -420,12 +422,32 @@ def check_docker() -> None:
         lines = json.loads(out.stdout)
     states = {c.get("Service"): c.get("State") for c in lines}
     for service in ("postgres", "prefect", "mlflow", "pipeline", "api", "pushgateway",
-                    "postgres-exporter", "prometheus", "alertmanager", "grafana"):
+                    "postgres-exporter", "prometheus", "alertmanager", "grafana", "backup"):
         state = states.get(service)
         if state == "running":
             ok(f"Conteneur {service}", "en marche")
         else:
             error(f"Conteneur {service}", f"état : {state or 'absent'}", f"docker compose up -d {service}")
+
+
+def check_backups(folder: Path | None = None, now: float | None = None) -> None:
+    """Sauvegardes dans ./backups : la plus récente a moins de 8 jours et se relit."""
+    folder = folder or PROJECT_ROOT / "backups"
+    dumps = sorted(folder.glob("smartsupply_*.dump"), key=lambda f: f.stat().st_mtime) if folder.exists() else []
+    if not dumps:
+        error("Sauvegardes", "aucune sauvegarde dans ./backups",
+              "docker compose up -d backup   (ou tout de suite : docker compose exec backup sh /scripts/backup.sh --maintenant)")
+        return
+    newest = dumps[-1]
+    age_days = ((now or time.time()) - newest.stat().st_mtime) / 86400
+    size_mb = newest.stat().st_size / 1024 / 1024
+    detail = f"{len(dumps)} sauvegarde(s), dernière : {newest.name} ({size_mb:.0f} Mo, il y a {age_days:.1f} j)"
+    if newest.stat().st_size < 1024:
+        error("Sauvegardes", f"{newest.name} est presque vide", "docker compose logs backup")
+    elif age_days > 8:
+        warn("Sauvegardes", detail, "docker compose logs backup")
+    else:
+        ok("Sauvegardes", detail)
 
 
 # -----------------------------------------------------------------------------
@@ -444,6 +466,7 @@ def main() -> None:
     check_prometheus()
     check_grafana_alertmanager()
     check_api()
+    check_backups()
 
     width = max(len(s) for _, s, _, _ in results)
     for status, subject, detail, fix in results:

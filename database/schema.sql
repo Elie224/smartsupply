@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS ml.training_datasets (
 
 -- ---------------------------------------------------------------------
 -- 14) ml.model_runs : un entraînement nocturne = une ligne (registre des modèles)
---     Le modèle EN PLACE = le dernier entraînement mis en service (promoted).
+--     Le modèle EN PLACE = le dernier entraînement mis en service (promoted) et non retiré.
 --     Le modèle lui-même est stocké dans la base (model_blob) : il est disponible
 --     aussi bien pour le pipeline Docker que pour les commandes lancées sur le PC.
 -- ---------------------------------------------------------------------
@@ -358,6 +358,12 @@ CREATE TABLE IF NOT EXISTS ml.model_runs (
 -- Réglages LightGBM utilisés (affichés dans MLflow). Vide pour les entraînements
 -- antérieurs à cette colonne.
 ALTER TABLE ml.model_runs ADD COLUMN IF NOT EXISTS params JSONB;
+-- Retour arrière (smartsupply.models.rollback) : un modèle RETIRÉ n'est plus jamais servi,
+-- même s'il est le plus récent des modèles retenus. Le modèle en service est donc :
+--   le dernier entraînement avec promoted ET withdrawn_at IS NULL.
+-- Annuler le retrait = remettre withdrawn_at à NULL. Rien n'est jamais effacé.
+ALTER TABLE ml.model_runs ADD COLUMN IF NOT EXISTS withdrawn_at TIMESTAMPTZ;
+ALTER TABLE ml.model_runs ADD COLUMN IF NOT EXISTS withdrawn_reason TEXT;
 
 -- ---------------------------------------------------------------------
 -- 15) ml.forecasts : prévisions faites chaque nuit, JAMAIS modifiées ensuite

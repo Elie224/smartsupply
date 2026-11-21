@@ -640,6 +640,147 @@
         "orientation": "vertical"
       },
       "id": 12
+    },
+    {
+      "type": "row",
+      "title": "Sauvegardes de la base",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 1
+      },
+      "id": 13
+    },
+    {
+      "type": "stat",
+      "title": "Dernière sauvegarde il y a",
+      "description": "Service « backup » : une sauvegarde par semaine dans ./backups. Rouge au-delà de 8 jours.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "time() - smartsupply_backup_last_success_timestamp_seconds",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 691200,
+                "color": "red"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      },
+      "id": 14
+    },
+    {
+      "type": "stat",
+      "title": "Taille de la dernière sauvegarde",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 32,
+        "w": 16,
+        "h": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "smartsupply_backup_size_bytes",
+          "legendFormat": "{{database}}",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical"
+      },
+      "id": 15
     }
   ],
   "templating": {

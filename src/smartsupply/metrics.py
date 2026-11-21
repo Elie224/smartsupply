@@ -49,9 +49,10 @@ def collect_state(engine: Engine) -> dict:
     with engine.connect() as conn:
         one = lambda sql: conn.execute(text(sql)).first()
         champion = one("SELECT wape, baseline_wape, bias, trained_at FROM ml.model_runs "
-                       "WHERE promoted ORDER BY trained_at DESC LIMIT 1")
+                       "WHERE promoted AND withdrawn_at IS NULL ORDER BY trained_at DESC LIMIT 1")
         runs = dict(conn.execute(text(
-            "SELECT CASE WHEN promoted THEN 'retenu' ELSE 'refusé' END, count(*) "
+            "SELECT CASE WHEN withdrawn_at IS NOT NULL THEN 'retiré' WHEN promoted THEN 'retenu' "
+            "ELSE 'refusé' END, count(*) "
             "FROM ml.model_runs GROUP BY 1")).all())
         drift = one("SELECT as_of_date, max_psi, n_watch, n_strong FROM ml.monitoring_daily "
                     "WHERE max_psi IS NOT NULL ORDER BY as_of_date DESC LIMIT 1")
