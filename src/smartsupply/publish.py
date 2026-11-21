@@ -14,6 +14,7 @@ grossit pas) :
     produits.csv                    catalogue
     modele.joblib                   modèle champion (pour la simulation)
     features_derniere_journee.parquet  données d'entrée du modèle (dernier jour)
+    features_derniere_journee.csv      la même chose en CSV (lue par l'API en ligne, sans pyarrow)
 
 Configuration (.env) :
     GITHUB_REPO   = utilisateur/depot
@@ -132,6 +133,7 @@ def build_bundle(engine: Engine) -> dict[str, bytes]:
         buffer = io.BytesIO()
         snapshots.to_parquet(buffer, index=False)
         bundle["features_derniere_journee.parquet"] = buffer.getvalue()
+        bundle["features_derniere_journee.csv"] = _csv(snapshots)
     return bundle
 
 

@@ -1,0 +1,11 @@
+# Vercel n'envoie que l'API en ligne : api/, src/, requirements.txt, vercel.json.
+# pyproject.toml est exclu, sinon Vercel installerait TOUTES les dépendances du projet
+# (Prefect, MLflow...) et dépasserait la limite de taille gratuite.
+/*
+!/api
+!/src
+!/requirements.txt
+!/vercel.json
+!/.python-version
+/src/smartsupply.egg-info
+**/__pycache__

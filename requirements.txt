@@ -1,0 +1,16 @@
+# Dépendances de l'API EN LIGNE seulement (Vercel, mode public) : pas de base, pas de MLflow,
+# pas de Prefect, pas de pyarrow (limite de 500 Mo). Le projet complet s'installe avec
+# pyproject.toml (pip install -e ".[dev]") ; le site Streamlit avec app/requirements.txt.
+# lightgbm / scikit-learn : mêmes versions que celles qui ont produit modele.joblib
+# (voir etat.json -> versions sur la branche donnees-publiques).
+fastapi>=0.115
+uvicorn>=0.30
+prometheus-client>=0.20
+pandas>=2.2
+numpy>=1.26
+lightgbm>=4.3
+scikit-learn>=1.5
+joblib>=1.4
+# importés par le code du modèle (aucune connexion n'est ouverte en mode public)
+sqlalchemy>=2.0
+python-dotenv>=1.0

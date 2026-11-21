@@ -5,9 +5,13 @@
 
 Documentation interactive : http://127.0.0.1:18800/docs
 Le modèle servi est le CHAMPION du registre MLflow (voir model_provider.py).
+
+Mode PUBLIC (version en ligne, sans base ni MLflow) : si SMARTSUPPLY_PUBLIC_DATA_URL est
+défini, l'API lit les résultats publiés chaque nuit (voir public_source.py, api/index.py).
 """
 from __future__ import annotations
 
+import os
 import time
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -22,6 +26,7 @@ from sqlalchemy.engine import Engine
 
 from smartsupply.api import data
 from smartsupply.api.model_provider import ModelProvider, ModelUnavailable
+from smartsupply.api.public_source import PublicModelProvider, PublicSource
 from smartsupply.db.connection import get_engine
 
 # -----------------------------------------------------------------------------
@@ -41,15 +46,21 @@ MODEL_INFO = Gauge("smartsupply_api_model_info", "Modèle servi (valeur toujours
 _state: dict = {}
 
 
+def public_data_url() -> str | None:
+    return os.getenv("SMARTSUPPLY_PUBLIC_DATA_URL") or None
+
+
 def engine_dep() -> Engine:
     if "engine" not in _state:
-        _state["engine"] = get_engine()
+        url = public_data_url()
+        _state["engine"] = PublicSource(url) if url else get_engine()
     return _state["engine"]
 
 
 def provider_dep(engine: Engine = Depends(engine_dep)) -> ModelProvider:
     if "provider" not in _state:
-        _state["provider"] = ModelProvider(engine)
+        _state["provider"] = (PublicModelProvider(engine) if isinstance(engine, PublicSource)
+                              else ModelProvider(engine))
     return _state["provider"]
 
 
@@ -70,7 +81,8 @@ app = FastAPI(
     description=("Prévision de la demande à 7 jours (LightGBM) et risque de rupture de stock. "
                  "Le modèle servi est le **champion** du registre MLflow ; les prévisions "
                  "« officielles » sont celles faites chaque nuit par le cycle automatique. "
-                 "Données synthétiques (projet d'apprentissage)."),
+                 "Données synthétiques (projet d'apprentissage). "
+                 "Code : https://github.com/Elie224/smartsupply"),
     version="1.0.0", openapi_tags=TAGS, lifespan=lifespan,
 )
 app.mount("/metrics", make_asgi_app())
@@ -96,7 +108,8 @@ Alerte = Literal["ok", "à surveiller", "rupture probable"]
 
 class ModeleInfo(BaseModel):
     run_id: str = Field(description="Identifiant de l'entraînement (ml.model_runs, tag MLflow smartsupply_run_id)")
-    source: Literal["mlflow", "base"] = Field(description="D'où vient le modèle servi")
+    source: Literal["mlflow", "base", "publication"] = Field(
+        description="D'où vient le modèle servi (publication = version en ligne, modèle publié la nuit)")
     version_mlflow: str | None = Field(description="Version dans le registre MLflow (alias champion)")
     entraine_le: datetime | None = None
     donnees_jusqu_au: date | None = Field(None, description="Dernière journée dont la cible était connue")
@@ -107,7 +120,7 @@ class ModeleInfo(BaseModel):
 
 class Sante(BaseModel):
     statut: Literal["ok", "dégradé"]
-    base_de_donnees: bool
+    base_de_donnees: bool = Field(description="Données accessibles (base, ou fichiers publiés en mode public)")
     donnees_jusqu_au: date | None
     modele: ModeleInfo | None
     erreur: str | None = None

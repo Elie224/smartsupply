@@ -194,6 +194,8 @@ En plus, une **alerte Windows** (tâche planifiée, `smartsupply.health`) s'affi
 
 ## 8. API de prévision
 
+**Version en ligne** (gratuite, sur Vercel) : même API en **mode public** — sans base ni MLflow, elle lit les résultats publiés chaque nuit (comme le site) et sert le modèle publié. Point d'entrée `api/index.py`, dépendances `requirements.txt` (allégées : ni Prefect, ni MLflow, ni pyarrow), fichiers envoyés limités par `.vercelignore`.
+
 Documentation interactive : http://127.0.0.1:18800/docs. L'API sert le **champion du registre MLflow** (repli sur la base si MLflow est arrêté) et vérifie toutes les 5 minutes si un nouveau champion a été mis en service.
 
 | Point d'entrée | Rôle |
