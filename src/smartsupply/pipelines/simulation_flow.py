@@ -5,6 +5,10 @@
     2. contrôle la qualité des données ;
     3. reconstruit le dataset ML (ml.feature_snapshots) ;
     4. réentraîne le modèle, et ne le met en service que s'il est assez bon ;
+    4 bis. GARDE-FOU : contrôle le modèle en service ; s'il a un problème, retour arrière
+       automatique vers le modèle précédent et rétablissement du service
+       (smartsupply.models.guard) ; si aucun modèle de secours n'est valable, le cycle
+       s'arrête AVANT de prévoir ;
     5. prédit la demande des 7 prochains jours (ml.forecasts) -> visible le matin dans Power BI ;
     6. surveille le modèle en service : dérive des données (PSI) et erreur réelle
        des prévisions dont les ventes sont connues (ml.monitoring_daily) ;
@@ -58,6 +62,7 @@ from smartsupply.generator.reference_data import SEED  # noqa: E402
 from smartsupply.metrics import StepTimer, build_registry, collect_state  # noqa: E402
 from smartsupply.metrics import push as push_metrics  # noqa: E402
 from smartsupply.generator.runner import simulate_pending_days  # noqa: E402
+from smartsupply.models.guard import guard as guard_champion  # noqa: E402
 from smartsupply.models.nightly import forecast_latest, retrain  # noqa: E402
 from smartsupply.models.monitoring import run_monitoring  # noqa: E402
 from smartsupply.models.tracking import sync_all as sync_mlflow  # noqa: E402
@@ -118,6 +123,12 @@ def build_features() -> int:
 def retrain_model() -> dict:
     # Sans effet si le modèle a déjà été entraîné sur ces données.
     return retrain(get_engine())
+
+
+@task
+def guard_model() -> dict:
+    # Pas de nouvel essai : un modèle défectueux sans secours doit arrêter le cycle tout de suite.
+    return guard_champion(get_engine())
 
 
 @task(retries=1, retry_delay_seconds=30)
@@ -192,6 +203,13 @@ def simulation_flow(seed: int = SEED) -> str:
     else:
         logger.info("Réentraînement : %s", r["status"])
 
+    with timer("garde_fou"):
+        g = guard_model()
+    if g["status"].startswith("retour arrière"):
+        logger.warning("Garde-fou : %s (%s) ; %s", g["status"], g["reason"], g["forecast"])
+    else:
+        logger.info("Garde-fou : %s", g["status"])
+
     with timer("prevision"):
         f = forecast_next_week()
     logger.info("Prévision : %s%s", f["status"],
@@ -202,9 +220,10 @@ def simulation_flow(seed: int = SEED) -> str:
     with timer("mlflow"):
         t = sync_tracking()
     logger.info("MLflow : %s", t)
-    summary = (f"{len(summaries)} journée(s) ajoutée(s), modèle : {r['status']}, "
+    summary = (f"{len(summaries)} journée(s) ajoutée(s), modèle : {r['status']}, garde-fou : {g['status']}, "
                f"prévision : {f['status']}, dérive : {m['status']}, MLflow : {t}")
-    record_run("ok", started_at, summary, len(summaries), r["status"], f["status"])
+    model_status = g["status"] if g["status"].startswith("retour arrière") else r["status"]
+    record_run("ok", started_at, summary, len(summaries), model_status, f["status"])
     # Après record_run : le site affiche l'état « ok » de ce passage.
     with timer("publication"):
         logger.info("Site public : %s", publish_site())

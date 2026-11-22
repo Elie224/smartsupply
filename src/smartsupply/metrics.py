@@ -70,6 +70,8 @@ def collect_state(engine: Engine) -> dict:
             "SELECT count(*) FROM analytics.v_forecasts "
             "WHERE is_latest AND forecast_alert = 'rupture probable'")).scalar()
         last_day = conn.execute(text("SELECT max(simulated_date) FROM raw.simulation_runs")).scalar()
+        auto_rollback = conn.execute(text(
+            "SELECT max(withdrawn_at) FROM ml.model_runs WHERE withdrawn_reason LIKE 'automatique%'")).scalar()
     return {
         "data_last_day": last_day,
         "model": None if champion is None else {
@@ -82,6 +84,7 @@ def collect_state(engine: Engine) -> dict:
                                            "wape_28d": real_28d},
         "forecast_units": None if forecast is None or forecast[0] is None else int(forecast[0]),
         "stockouts": int(stockouts or 0),
+        "auto_rollback_at": None if auto_rollback is None else auto_rollback.timestamp(),
     }
 
 
@@ -121,6 +124,8 @@ def build_registry(success: bool, run_ts: float, durations: dict[str, float] | N
         gauge("model_bias", "Biais du modèle en service", m["bias"])
         gauge("model_trained_timestamp_seconds", "Date d'entraînement du modèle en service", m["trained_at"])
     gauge_by("model_runs", "Entraînements par décision", "decision", state.get("model_runs") or {})
+    gauge("model_last_auto_rollback_timestamp_seconds",
+          "Heure du dernier retour arrière automatique (garde-fou)", state.get("auto_rollback_at"))
     if state.get("drift"):
         d = state["drift"]
         gauge("drift_max_psi", "PSI le plus élevé du jour", d["max_psi"])

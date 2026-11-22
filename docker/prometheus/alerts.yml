@@ -93,3 +93,11 @@ groups:
         annotations:
           summary: "Aucune sauvegarde de la base n'a encore réussi"
           description: "Voir : docker compose logs backup"
+
+      - alert: RetourArriereAutomatique
+        # Le garde-fou a retiré un modèle défectueux et remis le précédent en service (24 h d'affichage).
+        expr: time() - smartsupply_model_last_auto_rollback_timestamp_seconds < 86400
+        labels: {severity: attention}
+        annotations:
+          summary: "Retour arrière automatique du modèle"
+          description: "Le garde-fou a retiré le modèle en service et remis le précédent ; prévision du jour refaite. Détails : python -m smartsupply.models.rollback"

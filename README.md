@@ -146,6 +146,7 @@ Flow Prefect `cycle-nocturne`, déploiement `chaque-nuit` : **2 h 30** (heure de
 | 5. Prévision | Demande des 7 prochains jours pour chaque produit, enregistrée **sans jamais être modifiée** ensuite |
 | 6. Surveillance | Dérive (PSI) des 20 variables du modèle ; erreur réelle des prévisions dont les 7 jours sont écoulés |
 | 7. MLflow | Recopie entraînements, modèle retenu (alias `champion`) et surveillance |
+| 4 bis. Garde-fou | Contrôle le modèle en service ; retour arrière + prévision refaite si problème |
 | 8. Publication | Envoie les résultats (sans secret) sur la branche `donnees-publiques` pour le site public — seulement si quelque chose a changé |
 | 9. Prometheus | Dépose durées, résultat, erreurs, dérive dans le Pushgateway |
 
@@ -177,8 +178,14 @@ Un run par entraînement (réglages, WAPE, MAE, biais, méthode naïve, décisio
 
 **Copie publique sur DagsHub** (gratuit) : si `DAGSHUB_*` est dans `.env`, la même synchronisation part aussi vers le serveur MLflow du dépôt DagsHub relié à GitHub (`https://dagshub.com/Elie224/smartsupply.mlflow`). Les deux copies sont indépendantes : une panne de l'une ne bloque pas l'autre.
 
-### Retour arrière (rollback)
-`python -m smartsupply.models.rollback --precedent --raison "..."` retire le modèle en service et remet le précédent modèle retenu (ou `--vers RUN_ID`). Le modèle en service est **le dernier modèle retenu et non retiré** : le cycle de nuit, l'API, l'alias MLflow `champion`, le site public et Prometheus suivent tous cette règle, et la commande les met à jour aussitôt. Rien n'est effacé (`--annuler RUN_ID`), la raison du retrait est gardée dans la base.
+### Retour arrière (rollback) — automatique
+**Garde-fou chaque nuit** (`smartsupply.models.guard`, juste avant la prévision) : le modèle en service est contrôlé sur les données du jour et des 28 derniers jours connus — prédictions manquantes ou négatives, demande totale à plus d'un facteur 2 de la méthode naïve, moins bon que la méthode naïve, erreur récente très au-dessus de celle de l'entraînement, vraies prévisions à plus de 18 % d'erreur et pires que la méthode naïve. En cas de problème :
+1. **retour arrière automatique** : le modèle est retiré et le précédent modèle retenu (s'il passe lui-même les contrôles) reprend sa place ;
+2. **rétablissement automatique** : la prévision du jour faite par le modèle retiré est refaite ; MLflow (alias `champion`), l'API, le site et Prometheus suivent dans la suite du cycle ;
+3. **alerte e-mail** `RetourArriereAutomatique`.
+Si aucun modèle de secours n'est valable, le cycle s'arrête **avant** de prévoir (alerte `CycleEnEchec`) : pas de prévision plutôt qu'une prévision fausse.
+
+À la main : `python -m smartsupply.models.rollback --precedent --raison "..."` (ou `--vers RUN_ID`, annulation `--annuler RUN_ID`). Le modèle en service est **le dernier modèle retenu et non retiré** ; rien n'est effacé, la raison du retrait est gardée dans la base. La base de données, elle, n'est jamais restaurée automatiquement depuis une sauvegarde (cela écraserait les données récentes) : procédure dans le runbook.
 
 ### Surveillance
 | Mesure | Règle |

@@ -24,6 +24,7 @@ $py = "C:\Users\KOURO\anaconda3\envs\smartsupply\python.exe"   # à mettre dans 
 | Régénérer les tableaux Grafana | `& $py scripts/build_grafana_dashboards.py` (Grafana les relit en 1 min) |
 | Lancer les tests | `& $py -m pytest -q` |
 | Voir les modèles retenus (lequel est en service) | `& $py -m smartsupply.models.rollback` |
+| Contrôler le modèle en service (garde-fou, comme la nuit) | `& $py -m smartsupply.models.guard` |
 | **Retour arrière** : remettre le modèle précédent | `& $py -m smartsupply.models.rollback --precedent --raison "pourquoi"` (ou `--vers RUN_ID`) ; annuler : `--annuler RUN_ID` |
 | Publier le site public tout de suite | `& $py -m smartsupply.publish` (`--force` : même sans changement) |
 
@@ -94,6 +95,13 @@ Les runs déjà présents dans MLflow ne sont pas effacés : supprimer l'expéri
 - Synchroniser à la main : `& $py -m smartsupply.models.tracking` (affiche le local puis DagsHub).
 - `DagsHub : échec (... 401 ...)` : jeton faux ou expiré → nouveau jeton (DagsHub > Your Settings > Tokens) dans `.env`, puis `docker compose up -d --force-recreate pipeline`.
 - Une panne de DagsHub n'arrête ni le cycle ni le MLflow local : le retard est rattrapé au passage suivant.
+
+## 4 sexies. Retour arrière automatique (garde-fou)
+
+| Alerte / message | Ce qui s'est passé | Que faire |
+|---|---|---|
+| `RetourArriereAutomatique` | Le modèle en service avait un problème : il a été retiré, le précédent a repris sa place, la prévision du jour a été refaite | Rien d'urgent. Voir la raison : `& $py -m smartsupply.models.rollback`. Le modèle retiré ne revient jamais tout seul |
+| `CycleEnEchec` avec « aucun modèle de secours valable » | Le modèle en service ET les modèles précédents ont échoué aux contrôles : pas de prévision aujourd'hui | `& $py -m smartsupply.models.guard` pour le détail ; regarder les données du jour (`smartsupply.verify`) ; un nouvel entraînement la nuit suivante peut régler le problème |
 
 ## 4 quinquies. Sauvegardes de la base
 
