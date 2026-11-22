@@ -185,6 +185,16 @@ Un run par entraînement (réglages, WAPE, MAE, biais, méthode naïve, décisio
 3. **alerte e-mail** `RetourArriereAutomatique`.
 Si aucun modèle de secours n'est valable, le cycle s'arrête **avant** de prévoir (alerte `CycleEnEchec`) : pas de prévision plutôt qu'une prévision fausse.
 
+**Démonstration** ([rapport complet](docs/demo_retour_arriere.md)) : `python -m smartsupply.models.demo_rollback` sabote volontairement le modèle en service de trois façons, le laisse publier sa prévision (le pire cas), puis lance le vrai garde-fou :
+
+| Panne simulée | Attrapée par | Résultat |
+|---|---|---|
+| Bug d'unité : prévisions × 4 | demande totale comparée à la méthode naïve | retiré, modèle précédent remis, prévision du jour identique à l'origine |
+| Dérive discrète : prévisions + 60 %, plausibles à l'œil | erreur sur les 28 derniers jours connus | idem |
+| Bug de signe : un produit sur cinq en négatif | valeurs négatives (la base refuse aussi la prévision) | idem |
+
+Chaque panne est détectée et corrigée en environ 2 secondes ; la base est ensuite remise exactement dans son état d'origine.
+
 À la main : `python -m smartsupply.models.rollback --precedent --raison "..."` (ou `--vers RUN_ID`, annulation `--annuler RUN_ID`). Le modèle en service est **le dernier modèle retenu et non retiré** ; rien n'est effacé, la raison du retrait est gardée dans la base. La base de données, elle, n'est jamais restaurée automatiquement depuis une sauvegarde (cela écraserait les données récentes) : procédure dans le runbook.
 
 ### Surveillance

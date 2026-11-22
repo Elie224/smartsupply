@@ -25,6 +25,7 @@ $py = "C:\Users\KOURO\anaconda3\envs\smartsupply\python.exe"   # à mettre dans 
 | Lancer les tests | `& $py -m pytest -q` |
 | Voir les modèles retenus (lequel est en service) | `& $py -m smartsupply.models.rollback` |
 | Contrôler le modèle en service (garde-fou, comme la nuit) | `& $py -m smartsupply.models.guard` |
+| **Démontrer** le retour arrière automatique (3 pannes simulées, base remise en l'état ; pas pendant le cycle de 2h30) | `& $py -m smartsupply.models.demo_rollback` → rapport `docs/demo_retour_arriere.md` |
 | **Retour arrière** : remettre le modèle précédent | `& $py -m smartsupply.models.rollback --precedent --raison "pourquoi"` (ou `--vers RUN_ID`) ; annuler : `--annuler RUN_ID` |
 | Publier le site public tout de suite | `& $py -m smartsupply.publish` (`--force` : même sans changement) |
 
