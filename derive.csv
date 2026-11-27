@@ -1,0 +1,21 @@
+as_of_date,feature,psi,level
+2026-11-26,demand_rolling_mean_28,0.13660489316432545,à surveiller
+2026-11-26,demand_rolling_std_28,0.06947355612165247,stable
+2026-11-26,cv_28,0.04575939887525941,stable
+2026-11-26,demand_rolling_mean_7,0.04064798856227328,stable
+2026-11-26,mean7_over_mean28,0.03409887245226016,stable
+2026-11-26,stock_as_of,0.03175759102825697,stable
+2026-11-26,incoming_qty_known_as_of,0.024391128002370123,stable
+2026-11-26,demand_lag_28,0.01536477961596135,stable
+2026-11-26,stock_cover_days,0.014179020926261925,stable
+2026-11-26,demand_lag_14,0.00887073013703898,stable
+2026-11-26,demand_lag_1,0.00593932935370557,stable
+2026-11-26,incoming_cover_days,0.00576507923555627,stable
+2026-11-26,demand_lag_7,0.005620626162164509,stable
+2026-11-26,lost_sales_rolling_7,0.0039735979237569274,stable
+2026-11-26,promo_days_next_7,0.0027976281927682245,stable
+2026-11-26,promo_max_discount_next_7,0.0004629168899153632,stable
+2026-11-26,promotion_active,0.0001456522203522193,stable
+2026-11-26,discount_pct,0.0001456522203522193,stable
+2026-11-26,price_as_of,0.0,stable
+2026-11-26,supplier_lead_time_known_as_of,0.0,stable

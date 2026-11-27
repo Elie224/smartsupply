@@ -1,0 +1,47 @@
+{
+  "publie_le": "2026-11-27T07:50:57+00:00",
+  "donnees_jusqu_au": "2026-11-26",
+  "prevision_du": "2026-11-26",
+  "cycle": {
+    "statut": "ok",
+    "message": "Tout est à jour (données du 26/11/2026)",
+    "dernier_passage": "2026-11-27T07:50:26.606074+00:00"
+  },
+  "modele": {
+    "run_id": "20261127T074419Z",
+    "entraine_le": "2026-11-27T07:44:20.347103+00:00",
+    "donnees_jusqu_au": "2026-11-19",
+    "wape": 0.12591226457256013,
+    "wape_methode_naive": 0.19011280345168166,
+    "biais": -0.0018606055655298087
+  },
+  "volumes": {
+    "commandes": 256698,
+    "clients": 1198,
+    "jours_simules": 1061,
+    "debut": "2024-01-01"
+  },
+  "alertes": {
+    "ok": 50
+  },
+  "versions": {
+    "lightgbm": "4.7.0",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.5",
+    "pandas": "3.1.1",
+    "joblib": "1.6.0"
+  },
+  "tailles": {
+    "README.md": 248,
+    "derive.csv": 1134,
+    "features_derniere_journee.csv": 11339,
+    "features_derniere_journee.parquet": 23185,
+    "modele.joblib": 3516687,
+    "modeles.csv": 1442,
+    "precision.csv": 65,
+    "previsions.csv": 6114,
+    "produits.csv": 2542,
+    "surveillance.csv": 619,
+    "ventes_mensuelles.csv": 1688
+  }
+}
